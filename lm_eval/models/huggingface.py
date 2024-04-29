@@ -525,7 +525,7 @@ class HFLM(TemplateLM):
             # which breaks data-parallel mode.
             if hasattr(self, "accelerator"):
                 model_kwargs.update(
-                    {"device_map": {"": f"cuda:{self.accelerator.local_process_index}"}}
+                    {"device_map": {"": f"{self.accelerator.device}"}}
                 )
             else:
                 model_kwargs.update({"device_map": {"": str(self.device)}})
