@@ -39,7 +39,6 @@ eval_logger = utils.eval_logger
 
 
 def _get_accelerate_args(
-    self,
     device_map_option: Optional[str] = "auto",
     max_memory_per_gpu: Optional[Union[int, str]] = None,
     max_cpu_memory: Optional[Union[int, str]] = None,
@@ -50,7 +49,7 @@ def _get_accelerate_args(
     if max_memory_per_gpu is not None:
         max_memory_per_gpu_map = {
             device_idx: max_memory_per_gpu
-            for device_idx in range(self.accelerator.num_processes)
+            for device_idx in range(torch.cuda.device_count())
         }
         max_memory.update(max_memory_per_gpu_map)
     if max_cpu_memory is not None:
@@ -147,11 +146,9 @@ class HFLM(TemplateLM):
             assert isinstance(pretrained, str)
             assert isinstance(batch_size, (int, str))
 
+            gpus = torch.cuda.device_count()
             accelerator_kwargs = InitProcessGroupKwargs(timeout=timedelta(weeks=52))
             accelerator = Accelerator(kwargs_handlers=[accelerator_kwargs])
-
-            gpus = accelerator.num_processes
-
             if accelerator.num_processes > 1:
                 self.accelerator = accelerator
 
@@ -159,9 +156,8 @@ class HFLM(TemplateLM):
                 # use user-passed device
                 device_list = set(
                     ["cuda", "cpu","npu"]
-                    + [f"{accelerator.device}:{i}" for i in range(accelerator.num_processes)]
+                    + [f"cuda:{i}" for i in range(torch.cuda.device_count())]
                     + ["mps", "mps:0"]
-
                 )
                 if device and device in device_list:
                     self._device = torch.device(device)
@@ -516,8 +512,7 @@ class HFLM(TemplateLM):
         if parallelize:
             model_kwargs.update(
                 _get_accelerate_args(
-                    self, # TODO: phase out device_map_option?
-                    device_map_option,
+                    device_map_option,  # TODO: phase out device_map_option?
                     max_memory_per_gpu,
                     max_cpu_memory,
                     offload_folder,
@@ -530,7 +525,7 @@ class HFLM(TemplateLM):
             # which breaks data-parallel mode.
             if hasattr(self, "accelerator"):
                 model_kwargs.update(
-                    {"device_map": f"{self.accelerator.device}"}
+                    {"device_map": {"": f"cuda:{self.accelerator.local_process_index}"}}
                 )
             else:
                 model_kwargs.update({"device_map": {"": str(self.device)}})
